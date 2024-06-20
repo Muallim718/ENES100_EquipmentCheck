@@ -39,6 +39,7 @@ function onFormSubmit(e) {
     isValid = false;
   }
 
+  // Assign section
   var sectionSlot = assignSection(militaryTime, specificDay, roomNumber, isValid);
 
   // Write the data
