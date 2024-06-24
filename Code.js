@@ -1,69 +1,70 @@
 function onFormSubmit(e) {
+  // Initalize variables
+  var dataToExport = {};
   var form = FormApp.openById('1dUM0xBR5VaAuWbr22dT8mGrUCzKW668Of62ETRfkUac');
   var formResponses = form.getResponses();
   var latestResponse = formResponses.length - 1;
   var formResponse = formResponses[latestResponse];
-  
   var items = formResponse.getItemResponses(); 
+  
 
-
+  // Get the 3 form responses
   var table = getMethod(items[0]);
   var isMissing = getMethod(items[1]).toString();
+  var teamType = getMethod(items[2]).toString();
 
+  // Time variables
   var time = getTimestamp();
-  var dayTime = getDayTime(time);
   var militaryTime = getMilitaryTime(time);
-  var dataToExport = {};
+  var tmp = time.split(' ');
+  var date = tmp[0];
+  var dateNoForwardSlash = date.replace(/\//g, ':');
+
+  // Date specific variables
   var specificDay = (new Date()).getDay(); // Returns a number 0-6
   // 0-6, Sunday - Saturday
   var datesArray = ["Sunday", "Monday", "Tuesday", "Wesnesday", "Thursday", "Friday", "Saturday"];
   // Assign date
   var specificDayString = datesArray[specificDay];
-  var sectionTime = ["1000-1150", "1200-1350", "1400-1550", "1600-1750", "1630-1820"];
+  var datePlusDay = dateNoForwardSlash + " " +specificDayString;
 
+
+  // Section information
+  var sectionTime = ["1000-1150", "1200-1350", "1400-1550", "1600-1750", "1630-1820"];
   var sectionTimeSlot;
   var roomNumber = "";
-  var isValid = true;
 
+  // Determine room number
   if (table <= 5) {
     roomNumber = new String("1116");
   } else {
     roomNumber = new String("1120");
   }
 
-  var sectionTimeSlot = findTimeAndRoom(militaryTime, sectionTime);
-  if (sectionTimeSlot != null) {
-    sectionTimeSlot = timeAndRoom.sectionTime;
-  } else {
+  // Determine if the request is a valid entry
+  var sectionTimeSlot = findSectionTime(militaryTime, sectionTime);
+  if (sectionTimeSlot == null) {
     sectionTimeSlot = new String("Invalid Entry");
-    isValid = false;
   }
 
   // Assign section
-  var sectionSlot = assignSection(militaryTime, specificDay, roomNumber, isValid);
+  var sectionNumber = assignSection(militaryTime, specificDay, roomNumber);
 
-  // Write the data
-  dataToExport = 
-    {  
-      "table": table,
-      "isMissing": isMissing,
-      "time": time,
-      "dayTime": dayTime,
-      "militaryTime": militaryTime,
-      "specificDayString": specificDayString,
-      "sectionTimeSlot": sectionTimeSlot,
-      "roomNumber": roomNumber,
-      "sectionSlot": sectionSlot
-    };
+  // Fill fields to be exported
+  dataToExport = {
+    "missingTools": isMissing,
+    "missionType": teamType
+  }
 
+  // Get table number in string format
+  var tableNumber = getTableNumber(table);
 
-  writeToFirebase(dataToExport);
+  // Write data to the firebase
+  writeToFirebase(sectionNumber, datePlusDay, dataToExport, tableNumber);
 }
 
-function assignSection(time, specificDay, roomNumber, isValid) {
-  if (!isValid) {
-    return "No section given";
-  }
+function assignSection(time, specificDay, roomNumber) {
+  var testingPeriod = false;
 
   var mW, tuTh;
 
@@ -72,6 +73,7 @@ function assignSection(time, specificDay, roomNumber, isValid) {
   var isTwoToFour = false;
   var isFourToSix = false;
   var isFCTime = false;
+
 
   var is1116 = false;
   var is1120 = false;
@@ -87,16 +89,18 @@ function assignSection(time, specificDay, roomNumber, isValid) {
     isFourToSix = true;
   } else if (time >= 1630 && time <= 1820) { // 4:30 - 6:20
     isFCTime = true;
+  } else {
+    testingPeriod = true;
   }
 
   // Determine whether it's a MW or TuTh section
-  if (specificDay == 1 || specificDay == 4) {
+  if (specificDay == 1 || specificDay == 3) {
     mW = true;
   } else {
     mW = false;
   }
 
-  if (specificDay == 2 || specificDay == 5) {
+  if (specificDay == 2 || specificDay == 4) {
     tuTh = true;
   } else {
     tuTh = false;
@@ -140,12 +144,17 @@ function assignSection(time, specificDay, roomNumber, isValid) {
     return "FC01";
   } else if (mW && isFCTime && is1116) {
     return "FC02";
+  } else if (testingPeriod) {
+    return "0000";
+  } else {
+    return "Out!";
   }
-
 
 }
 
-function findTimeAndRoom(militaryTime, sectionTime) {
+// Point behind this function is to see if the user gave a response
+// more than 20 minutes after the start of class
+function findSectionTime(militaryTime, sectionTime) {
   var beginningTimes = new Array(sectionTime.length);
   var endTimes = new Array(sectionTime.length);
 
@@ -179,7 +188,11 @@ function findTimeAndRoom(militaryTime, sectionTime) {
   return sectionTime[marker];
 }
 
-// Get EST 
+function getTableNumber(table) {
+  return "Table" + table.toString();
+}
+
+// Get EST Time
 function getTimestamp() {
   var timestamp = new Date();
   return timestamp.toLocaleString('en-us', {timeZone: 'America/New_York', timeZoneName: 'short'});
@@ -198,10 +211,14 @@ function getMilitaryTime(time) {
   var hourMinutesSeconds = timeAndTimezonePart[0].split(":");
   
   var hour;
-  if (timeAndTimezonePart[1] == "AM" || (timeAndTimezonePart[1] == "PM" && hourMinutesSeconds[0] == 12)) {
-    hour = parseInt(hourMinutesSeconds[0]);
-  } else { // "PM"
-    hour = parseInt(hourMinutesSeconds[0]) + 12;
+  if (timeAndTimezonePart[1] == "AM" && hourMinutesSeconds[0] == 12) { // If midnight (added if testing around that time)
+    hour = 0;
+  } else if (timeAndTimezonePart[1] == "PM" && hourMinutesSeconds[0] == 12) { // If noon
+    hour = 12;
+  } else if (timeAndTimezonePart[1] == "AM") { // If AM
+    hour = parseInt(hourMinutesSeconds[1]);
+  } else if (timeAndTimezonePart[1] == "PM") { // If PM
+    hour = parseInt(hourMinutesSeconds[1]) + 12;
   }
   var minutes = parseInt(hourMinutesSeconds[1]);
 
@@ -219,28 +236,8 @@ function getMilitaryTime(time) {
   return hourString + minutesString;
 }
 
-function writeToFirebase(dataToExport) {
-  var url = 'https://check-ee399-default-rtdb.firebaseio.com/orders.json';
-
-  var payload = JSON.stringify(dataToExport);
-  var options = {
-    'method': 'post',
-    'contentType': 'application/json',
-    'payload': payload
-  };
-
-  var response = UrlFetchApp.fetch(url, options);
-  var responseData = JSON.parse(response.getContentText());
-
-  if (response.getResponseCode() == 200) { // If error code
-    console.log("Data written successfully to Firebase:", responseData);
-  } else { // If no error
-    console.error("Error writing data to Firebase:", responseData);
-  }
-}
-
 function getMethod(item) {
-  var value = item || "_unknown_"; // if null then "_unknown_" is assigned
+  var value = item || "_unknown_"; // If null then "_unknown_" is assigned
   
   function check(x) {
     if(x == "")
@@ -254,4 +251,35 @@ function getMethod(item) {
   } else {
     return value;
   }
+}
+
+function writeToFirebase(sectionNumber, date, dataToExport, tableNumber) {
+  var firebaseConfig = {
+    apiKey: "AIzaSyCIHukYa07oKC159AJV7RGN1Z-ZMOZQA2k",
+    authDomain: "check-ee399.firebaseapp.com",
+    databaseURL: "https://check-ee399-default-rtdb.firebaseio.com",
+    projectId: "check-ee399",
+    storageBucket: "check-ee399.appspot.com",
+    messagingSenderId: "616595701207",
+    appId: "1:616595701207:web:ee4e998307f445b65f9f92",
+    measurementId: "G-8LLFPR7BDT"
+  };
+
+
+  // Make URL for database
+  var databaseUrl = firebaseConfig.databaseURL;
+  var path = '/orders/' + sectionNumber + '/' + date + '/' + tableNumber + '/';
+  var url = databaseUrl + path + '.json?auth=' + firebaseConfig.apiKey;
+
+  var payload = JSON.stringify(dataToExport);
+
+  // POST request to Database
+  var options = {
+    method: 'put',
+    contentType: 'application/json',
+    payload: payload
+  };
+
+  var response = UrlFetchApp.fetch(url, options);
+  Logger.log(response.getContentText());
 }
