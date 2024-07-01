@@ -82,7 +82,7 @@ function assignSection(time, specificDay, roomNumber) {
   if (time >= 1000 && time <= 1150) { // 10:00 - 11:50
     isTenToTwelve = true;
   } else if (time >= 1200 && time <= 1350) { // 12:00 - 1:50
-    isTwevleToTwo = true;
+    isTwelveToTwo = true;
   } else if (time >= 1400 && time <= 1550) { // 2:00 - 3:50
     isTwoToFour = true;
   } else if (time >= 1600 && time <= 1750) { // 4:00 - 5:50
@@ -142,7 +142,7 @@ function assignSection(time, specificDay, roomNumber) {
     return "1001";
   } else if (mW && isFCTime && is1116) {
     return "FC01";
-  } else if (mW && isFCTime && is1116) {
+  } else if (mW && isFCTime && is1120) {
     return "FC02";
   } else if (testingPeriod) {
     return "0000";
@@ -173,7 +173,8 @@ function findSectionTime(militaryTime, sectionTime) {
     if (!inRange) {
       invalidCount++;
     } else {
-      if (militaryTimeInt > beginningTimes[i] + 20) {
+      // Change bounds for testing purposes
+      if (militaryTimeInt > beginningTimes[i] + 100) {
         invalidCount++;
       } else {
         marker = i;
@@ -216,9 +217,9 @@ function getMilitaryTime(time) {
   } else if (timeAndTimezonePart[1] == "PM" && hourMinutesSeconds[0] == 12) { // If noon
     hour = 12;
   } else if (timeAndTimezonePart[1] == "AM") {
-    hour = parseInt(hourMinutesSeconds[1]);
+    hour = parseInt(hourMinutesSeconds[0]);
   } else if (timeAndTimezonePart[1] == "PM") {
-    hour = parseInt(hourMinutesSeconds[1]) + 12;
+    hour = parseInt(hourMinutesSeconds[0]) + 12;
   }
   var minutes = parseInt(hourMinutesSeconds[1]);
 
